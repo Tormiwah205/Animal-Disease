@@ -75,7 +75,7 @@ plt.tight_layout()
 plt.show()
 
 
-#box plot of age distribution
+#bar plot of age distribution
 
 age_counts = adisease["Age"].value_counts().sort_index()
 
@@ -113,3 +113,73 @@ plt.xlabel("Disease")
 plt.ylabel("Temperature (°F)")
 plt.tight_layout()
 plt.show()
+
+#symptoms analysis
+
+symptoms_rearranged = symptom_counts.reset_index()
+symptoms_rearranged.columns = ["Symptom", "Count"]
+
+#visualize top 10 most common symptoms
+plt.figure(figsize=(10, 5))
+sns.barplot(data=symptoms_rearranged.head(10), x="Symptom", y="Count", hue="Symptom", palette="muted")
+
+
+
+plt.title("Top 10 Most Common Symptoms")
+plt.xlabel("Symptom")
+plt.ylabel("Number of Cases")
+plt.xticks(rotation=45, ha="right")
+plt.tight_layout()
+plt.show()
+
+#visualize top 5 combination of symptoms 
+
+# Create a new column combining the 3 symptoms as a tuple
+adisease["Symptom_Combo"] = adisease[["Symptom 1", "Symptom 2", "Symptom 3"]].apply(lambda x: tuple(sorted(x)), axis=1)
+
+combo_counts = adisease["Symptom_Combo"].value_counts().head()
+
+combo_rearranged = combo_counts.reset_index()
+combo_rearranged.columns = ["Symptom Combination", "Count"]
+
+combo_rearranged["Symptom Combination"] = combo_rearranged["Symptom Combination"].apply(lambda x: " + ".join(x))
+
+plt.figure(figsize=(10, 6))
+sns.barplot(data=combo_rearranged, y="Symptom Combination", x="Count", hue="Symptom Combination", palette="deep")
+plt.title("Top 5 Most Common Symptom Combinations")
+plt.xlabel("Number of Cases")
+plt.ylabel("Symptom Combination")
+plt.tight_layout()
+plt.show()
+
+#symptom disease relationship
+#combining symptopm and disease into pairs
+
+symptom_relate = pd.melt(adisease, 
+                       id_vars=["Disease"], 
+                       value_vars=["Symptom 1", "Symptom 2", "Symptom 3"],
+                       var_name="Symptom_Position", 
+                       value_name="Symptom")
+symptom_r_disease_counts = symptom_relate.groupby(["Symptom", "Disease"]).size().reset_index(name="Count")
+
+#verification
+print(symptom_r_disease_counts.head())
+
+# Create matrix with Symptoms as rows, Diseases as columns
+heatmap_data = symptom_r_disease_counts.pivot(index="Symptom", columns="Disease", values="Count").fillna(0)
+
+# Check the shape
+print(heatmap_data.shape)
+
+plt.figure(figsize=(16, 10))
+
+
+sns.heatmap(heatmap_data, cmap="YlGnBu", linewidths=0.5)
+
+# Add title and labels
+plt.title("Symptom–Disease Relationship Heatmap", fontsize=14)
+plt.xlabel("Disease")
+plt.ylabel("Symptom")
+plt.tight_layout()
+plt.show()
+
