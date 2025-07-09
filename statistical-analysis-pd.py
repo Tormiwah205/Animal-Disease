@@ -3,7 +3,7 @@ import scipy.stats as stats
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-adisease = pd.read_csv("animal_disease_dataset.csv", index_col=0)
+adisease = pd.read_csv("animal_disease_dataset.csv")
 
 symptom_relate = pd.melt(adisease, 
                        id_vars=["Disease"], 
@@ -59,13 +59,13 @@ for symptom in unique_symptoms:
                     "P-Value": round(p, 5)
                 })
 
-# Step 4: Convert results to DataFrame
+# Convert results to DataFrame
 significant_disease = pd.DataFrame(significant_pairs)
 
-# Step 5: Sort by lowest p-values
+# Sort by lowest p-values
 significant_disease = significant_disease.sort_values(by="P-Value")
 
-# Step 6: Display top associations
+# Display top associations
 print(significant_disease.head(10))
 
 #ANOVA for age and temperature against disease
@@ -80,7 +80,7 @@ def run_anova(adisease, variable, group_col="Disease"):
     #Perform one-way ANOVA on the groups
     f_stat, p_val = stats.f_oneway(*groups)
 
-    # Step 4: Print the results
+    #Print the results
     print(f"ANOVA for {variable}:")
     print("F-statistic:", round(f_stat, 2))
     print("P-value:", round(p_val, 5))
@@ -95,11 +95,10 @@ import statsmodels.stats.multicomp as mc
 tukey_tst = adisease[["Temperature", "Disease"]]
 
 tukey_result = mc.pairwise_tukeyhsd(
-    endog=tukey_tst["Temperature"],   # numeric variable
-    groups=tukey_tst["Disease"],      # group labels
-    alpha=0.05                       # significance level
+    endog=tukey_tst["Temperature"],  
+    groups=tukey_tst["Disease"],      
+    alpha=0.05                       
 )
-
 
 print(tukey_result.summary())
 
@@ -109,33 +108,56 @@ plt.xlabel("Mean Difference with 95% CI")
 plt.show()
 
 from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import MultiLabelBinarizer
 
-# Copy dataset
-traindata = adisease.copy()
+#Merge symptoms into a single list per row (remove position tracking)
+symptom_cols = ["Symptom 1", "Symptom 2", "Symptom 3"]
+adisease["All_Symptoms"] = adisease[symptom_cols].values.tolist()
+adisease["All_Symptoms"] = adisease["All_Symptoms"].apply(lambda x: list(set(x)))  # remove duplicates
 
-# Encode categorical columns (Symptom 1–3)
-for col in ["Symptom 1", "Symptom 2", "Symptom 3"]:
-    revs = LabelEncoder()
-    traindata[col] = revs.fit_transform(traindata[col].astype(str))
+#One-hot encode the unique symptoms
+mlb = MultiLabelBinarizer()
+symptom_dummies = pd.DataFrame(
+    mlb.fit_transform(adisease["All_Symptoms"]),
+    columns=mlb.classes_,
+    index=adisease.index
+)
+
+#One-hot encode Animal column
+animal_dummies = pd.get_dummies(adisease["Animal"])
+animal_dummies.columns = [col.replace("Animal_", "") for col in animal_dummies.columns] 
+
+#Combine everything
+traindata = pd.concat([
+    adisease[["Age", "Temperature"]],
+    symptom_dummies,
+    animal_dummies
+], axis=1)
 
 # Encode target column (Disease)
 revd = LabelEncoder()
-traindata["Disease"] = revd.fit_transform(traindata["Disease"])
-
+traindata["Disease"] = revd.fit_transform(adisease["Disease"])
 
 from sklearn.model_selection import train_test_split
 
-# Select features and target
-X = traindata[["Symptom 1", "Symptom 2", "Symptom 3", "Age", "Temperature"]]
+# Select features (all except Disease) and target (Disease)
+X = traindata.drop("Disease", axis=1)
 y = traindata["Disease"]
 
 # Split data
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
+from sklearn.preprocessing import StandardScaler
+# Scale features using StandardScaler
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)  # fit on training data only
+X_test = scaler.transform(X_test)   
+
+
 from sklearn.ensemble import RandomForestClassifier
 
 # Initialize and train model
-model = RandomForestClassifier(random_state=42)
+model = RandomForestClassifier(n_estimators=100, random_state=42)
 model.fit(X_train, y_train)
 
 from sklearn.metrics import accuracy_score, classification_report
@@ -173,12 +195,56 @@ feat_imp_d = pd.DataFrame({
 # Print sorted importances
 print(feat_imp_d)
 
-plt.figure(figsize=(8, 4))
+plt.figure(figsize=(16, 8))
 sns.barplot(data=feat_imp_d, x="Importance", y="Feature", hue= "Feature", palette="viridis")
 plt.title("Feature Importance in Disease Prediction")
 plt.xlabel("Importance Score")
 plt.ylabel("Feature")
 plt.tight_layout()
 plt.show()
+
+from sklearn.linear_model import LogisticRegression
+
+# Initialize logistic regression for multiclass classification
+log_model = LogisticRegression(solver='lbfgs', max_iter=5000)
+
+# Fit model
+log_model.fit(X_train, y_train)
+
+from sklearn.metrics import classification_report, accuracy_score
+
+# Predict
+y_pred = log_model.predict(X_test)
+
+# Evaluate
+print("Accuracy:", accuracy_score(y_test, y_pred))
+print("\nClassification Report:\n", classification_report(y_test, y_pred, target_names=revd.classes_))
+
+#Logistic Regression Coefficients by Disease
+# Create a DataFrame of coefficients
+coeff_disease = pd.DataFrame(log_model.coef_, columns=feature_names)
+coeff_disease["Disease"] = revd.classes_
+coeff_disease = coeff_disease[["Disease"] + list(feature_names)]
+
+print("\nLogistic Regression Coefficients by Disease\n")
+print(coeff_disease)
+
+for i, disease in enumerate(revd.classes_):
+    coef_values = log_model.coef_[i]
+
+    coef_subset = pd.DataFrame({
+        "Feature": feature_names,
+        "Coefficient": coef_values
+    }).sort_values("Coefficient", key=abs, ascending=False)
+
+
+    plt.figure(figsize=(12, 6))
+    plt.barh(coef_subset["Feature"][:15], coef_subset["Coefficient"][:15], color="skyblue")
+    plt.axvline(0, color="black", linestyle="--")
+    plt.title(f"Top 15 Features Regression Coefficients for Disease: {disease}")
+    plt.xlabel("Coefficient Value (Log-Odds Impact)")
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
+    plt.show()
 
 

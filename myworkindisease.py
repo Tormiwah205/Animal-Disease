@@ -8,7 +8,7 @@ adisease = pd.read_csv("animal_disease_dataset.csv", index_col=0)
 print(adisease.head())
 
 # Check column names and data types
-print(adisease.info())
+print(adisease.info.to_string(index=False)())
 
 # A quick statistical summary of numerical values of the dataset
 print(adisease.describe())
