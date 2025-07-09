@@ -246,5 +246,6 @@ for i, disease in enumerate(revd.classes_):
     plt.gca().invert_yaxis()
     plt.tight_layout()
     plt.show()
+    
 
 
